@@ -3,4 +3,3 @@ flask-cors==6.0.2
 kerykeion==5.12.7
 gunicorn==23.0.0
 pytz==2024.2
-timezonefinder[light]==6.5.0
