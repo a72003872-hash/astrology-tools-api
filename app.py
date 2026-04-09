@@ -1,4 +1,4 @@
- """
+"""
 Astrology Tools API — All 14 Tools in One Server
 =================================================
 Free, open-source. Powered by Kerykeion + Swiss Ephemeris.
@@ -763,15 +763,68 @@ def all_points():
 # GEOCODING — City name → Lat/Lng/Timezone
 # ═══════════════════════════════════════════════════════════════
 
+# Country → Timezone mapping (covers 95%+ of astrology users)
+COUNTRY_TZ = {
+    "Pakistan": "Asia/Karachi", "India": "Asia/Kolkata",
+    "Bangladesh": "Asia/Dhaka", "Sri Lanka": "Asia/Colombo",
+    "Nepal": "Asia/Kathmandu", "Afghanistan": "Asia/Kabul",
+    "Iran": "Asia/Tehran", "Iraq": "Asia/Baghdad",
+    "United Arab Emirates": "Asia/Dubai", "Saudi Arabia": "Asia/Riyadh",
+    "Qatar": "Asia/Qatar", "Kuwait": "Asia/Kuwait",
+    "Bahrain": "Asia/Bahrain", "Oman": "Asia/Muscat",
+    "Turkey": "Europe/Istanbul", "Egypt": "Africa/Cairo",
+    "United Kingdom": "Europe/London", "England": "Europe/London",
+    "France": "Europe/Paris", "Germany": "Europe/Berlin",
+    "Italy": "Europe/Rome", "Spain": "Europe/Madrid",
+    "Netherlands": "Europe/Amsterdam", "Belgium": "Europe/Brussels",
+    "Switzerland": "Europe/Zurich", "Austria": "Europe/Vienna",
+    "Poland": "Europe/Warsaw", "Sweden": "Europe/Stockholm",
+    "Norway": "Europe/Oslo", "Denmark": "Europe/Copenhagen",
+    "Finland": "Europe/Helsinki", "Portugal": "Europe/Lisbon",
+    "Greece": "Europe/Athens", "Romania": "Europe/Bucharest",
+    "Russia": "Europe/Moscow", "Ukraine": "Europe/Kyiv",
+    "United States": "America/New_York",
+    "United States of America": "America/New_York",
+    "Canada": "America/Toronto", "Mexico": "America/Mexico_City",
+    "Brazil": "America/Sao_Paulo",
+    "Argentina": "America/Argentina/Buenos_Aires",
+    "Colombia": "America/Bogota", "Chile": "America/Santiago",
+    "Peru": "America/Lima", "Venezuela": "America/Caracas",
+    "China": "Asia/Shanghai", "Japan": "Asia/Tokyo",
+    "South Korea": "Asia/Seoul", "Taiwan": "Asia/Taipei",
+    "Thailand": "Asia/Bangkok", "Vietnam": "Asia/Ho_Chi_Minh",
+    "Malaysia": "Asia/Kuala_Lumpur", "Singapore": "Asia/Singapore",
+    "Indonesia": "Asia/Jakarta", "Philippines": "Asia/Manila",
+    "Australia": "Australia/Sydney", "New Zealand": "Pacific/Auckland",
+    "South Africa": "Africa/Johannesburg", "Nigeria": "Africa/Lagos",
+    "Kenya": "Africa/Nairobi", "Morocco": "Africa/Casablanca",
+    "Israel": "Asia/Jerusalem", "Jordan": "Asia/Amman",
+    "Lebanon": "Asia/Beirut", "Syria": "Asia/Damascus",
+}
+
+
+def lookup_timezone(country, lng):
+    """Get timezone from country name, fallback to longitude."""
+    tz = COUNTRY_TZ.get(country, "")
+    if tz:
+        # Special US handling by longitude
+        if country in ("United States", "United States of America"):
+            if lng < -115: tz = "America/Los_Angeles"
+            elif lng < -100: tz = "America/Denver"
+            elif lng < -87: tz = "America/Chicago"
+            else: tz = "America/New_York"
+        return tz
+    # Fallback: longitude-based UTC offset
+    offset = round(lng / 15)
+    return f"Etc/GMT{'+' if offset <= 0 else '-'}{abs(offset)}"
+
+
 @app.route("/api/geocode", methods=["GET"])
 def geocode_city():
     """
     Convert city name to latitude, longitude, and timezone.
-    Used by WordPress frontend for autocomplete & city lookup.
-
     GET /api/geocode?city=Lahore
     GET /api/geocode?city=New York
-    GET /api/geocode?city=London,UK
     """
     city = request.args.get("city", "").strip()
     if not city or len(city) < 2:
@@ -779,41 +832,24 @@ def geocode_city():
 
     try:
         import urllib.request
+        import urllib.parse
         import json as json_lib
-        from timezonefinder import TimezoneFinder
 
-        # Call Nominatim (free, no API key needed)
         encoded_city = urllib.parse.quote(city)
         url = (
             f"https://nominatim.openstreetmap.org/search"
             f"?q={encoded_city}"
             f"&format=json&limit=5&addressdetails=1"
-            f"&featuretype=city"
         )
         req = urllib.request.Request(url, headers={
-            "User-Agent": "AstrologyToolsAPI/1.0 (contact@astrology-tools.com)"
+            "User-Agent": "AstrologyToolsAPI/1.0 (astrology-tools-api)"
         })
         resp = urllib.request.urlopen(req, timeout=10)
         results = json_lib.loads(resp.read())
 
         if not results:
-            # Retry without featuretype filter
-            url2 = (
-                f"https://nominatim.openstreetmap.org/search"
-                f"?q={encoded_city}"
-                f"&format=json&limit=5&addressdetails=1"
-            )
-            req2 = urllib.request.Request(url2, headers={
-                "User-Agent": "AstrologyToolsAPI/1.0 (contact@astrology-tools.com)"
-            })
-            resp2 = urllib.request.urlopen(req2, timeout=10)
-            results = json_lib.loads(resp2.read())
-
-        if not results:
             return jsonify({"error": f"City '{city}' not found"}), 404
 
-        # Get timezone for each result
-        tf = TimezoneFinder()
         cities = []
         seen = set()
 
@@ -822,19 +858,15 @@ def geocode_city():
             lng = float(r["lon"])
             display = r.get("display_name", city)
 
-            # Deduplicate by rounded coordinates
             key = f"{round(lat,1)},{round(lng,1)}"
             if key in seen:
                 continue
             seen.add(key)
 
-            # Get timezone
-            tz = tf.timezone_at(lat=lat, lng=lng) or "UTC"
-
-            # Extract country from address details
             addr = r.get("address", {})
             country = addr.get("country", "")
             state = addr.get("state", "")
+            tz = lookup_timezone(country, lng)
 
             cities.append({
                 "name": display.split(",")[0].strip(),
@@ -859,8 +891,8 @@ def geocode_city():
 @app.route("/api/geocode/timezone", methods=["GET"])
 def get_timezone():
     """
-    Get timezone for given coordinates.
-    GET /api/geocode/timezone?lat=31.5204&lng=74.3587
+    Get timezone for given coordinates and country.
+    GET /api/geocode/timezone?lat=31.5204&lng=74.3587&country=Pakistan
     """
     try:
         lat = float(request.args.get("lat", 0))
@@ -868,22 +900,14 @@ def get_timezone():
     except (ValueError, TypeError):
         return jsonify({"error": "Valid lat and lng required"}), 400
 
-    if lat == 0 and lng == 0:
-        return jsonify({"error": "lat and lng parameters required"}), 400
+    country = request.args.get("country", "")
+    tz = lookup_timezone(country, lng)
 
-    try:
-        from timezonefinder import TimezoneFinder
-        tf = TimezoneFinder()
-        tz = tf.timezone_at(lat=lat, lng=lng) or "UTC"
-
-        return jsonify({
-            "success": True,
-            "latitude": lat,
-            "longitude": lng,
-            "timezone": tz,
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    return jsonify({
+        "success": True,
+        "latitude": lat, "longitude": lng,
+        "timezone": tz,
+    })
 
 
 # ─── Run ──────────────────────────────────────────────────────
