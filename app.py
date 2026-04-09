@@ -1,4 +1,4 @@
-"""
+ """
 Astrology Tools API — All 14 Tools in One Server
 =================================================
 Free, open-source. Powered by Kerykeion + Swiss Ephemeris.
@@ -716,6 +716,7 @@ def health():
             "/api/big-three", "/api/venus-sign", "/api/chiron-sign",
             "/api/lilith-sign", "/api/north-node",
             "/api/part-of-fortune", "/api/vertex",
+            "/api/geocode", "/api/geocode/timezone",
         ]
     })
 
@@ -756,6 +757,133 @@ def all_points():
         })
     except Exception as e:
         return jsonify({"error":str(e)}), 500
+
+
+# ═══════════════════════════════════════════════════════════════
+# GEOCODING — City name → Lat/Lng/Timezone
+# ═══════════════════════════════════════════════════════════════
+
+@app.route("/api/geocode", methods=["GET"])
+def geocode_city():
+    """
+    Convert city name to latitude, longitude, and timezone.
+    Used by WordPress frontend for autocomplete & city lookup.
+
+    GET /api/geocode?city=Lahore
+    GET /api/geocode?city=New York
+    GET /api/geocode?city=London,UK
+    """
+    city = request.args.get("city", "").strip()
+    if not city or len(city) < 2:
+        return jsonify({"error": "City name required (min 2 chars)"}), 400
+
+    try:
+        import urllib.request
+        import json as json_lib
+        from timezonefinder import TimezoneFinder
+
+        # Call Nominatim (free, no API key needed)
+        encoded_city = urllib.parse.quote(city)
+        url = (
+            f"https://nominatim.openstreetmap.org/search"
+            f"?q={encoded_city}"
+            f"&format=json&limit=5&addressdetails=1"
+            f"&featuretype=city"
+        )
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "AstrologyToolsAPI/1.0 (contact@astrology-tools.com)"
+        })
+        resp = urllib.request.urlopen(req, timeout=10)
+        results = json_lib.loads(resp.read())
+
+        if not results:
+            # Retry without featuretype filter
+            url2 = (
+                f"https://nominatim.openstreetmap.org/search"
+                f"?q={encoded_city}"
+                f"&format=json&limit=5&addressdetails=1"
+            )
+            req2 = urllib.request.Request(url2, headers={
+                "User-Agent": "AstrologyToolsAPI/1.0 (contact@astrology-tools.com)"
+            })
+            resp2 = urllib.request.urlopen(req2, timeout=10)
+            results = json_lib.loads(resp2.read())
+
+        if not results:
+            return jsonify({"error": f"City '{city}' not found"}), 404
+
+        # Get timezone for each result
+        tf = TimezoneFinder()
+        cities = []
+        seen = set()
+
+        for r in results[:5]:
+            lat = float(r["lat"])
+            lng = float(r["lon"])
+            display = r.get("display_name", city)
+
+            # Deduplicate by rounded coordinates
+            key = f"{round(lat,1)},{round(lng,1)}"
+            if key in seen:
+                continue
+            seen.add(key)
+
+            # Get timezone
+            tz = tf.timezone_at(lat=lat, lng=lng) or "UTC"
+
+            # Extract country from address details
+            addr = r.get("address", {})
+            country = addr.get("country", "")
+            state = addr.get("state", "")
+
+            cities.append({
+                "name": display.split(",")[0].strip(),
+                "full_name": display,
+                "latitude": round(lat, 6),
+                "longitude": round(lng, 6),
+                "timezone": tz,
+                "country": country,
+                "state": state,
+            })
+
+        return jsonify({
+            "success": True,
+            "query": city,
+            "results": cities,
+        })
+
+    except Exception as e:
+        return jsonify({"error": f"Geocoding failed: {str(e)}"}), 500
+
+
+@app.route("/api/geocode/timezone", methods=["GET"])
+def get_timezone():
+    """
+    Get timezone for given coordinates.
+    GET /api/geocode/timezone?lat=31.5204&lng=74.3587
+    """
+    try:
+        lat = float(request.args.get("lat", 0))
+        lng = float(request.args.get("lng", 0))
+    except (ValueError, TypeError):
+        return jsonify({"error": "Valid lat and lng required"}), 400
+
+    if lat == 0 and lng == 0:
+        return jsonify({"error": "lat and lng parameters required"}), 400
+
+    try:
+        from timezonefinder import TimezoneFinder
+        tf = TimezoneFinder()
+        tz = tf.timezone_at(lat=lat, lng=lng) or "UTC"
+
+        return jsonify({
+            "success": True,
+            "latitude": lat,
+            "longitude": lng,
+            "timezone": tz,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ─── Run ──────────────────────────────────────────────────────
