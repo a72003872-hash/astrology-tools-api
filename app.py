@@ -31,6 +31,13 @@ from kerykeion import (
 )
 import swisseph as swe
 import math
+from interpretations import (
+    SUN_INTERPRETATIONS, MOON_INTERPRETATIONS, RISING_INTERPRETATIONS,
+    VENUS_INTERPRETATIONS, MARS_INTERPRETATIONS, MERCURY_INTERPRETATIONS,
+    CHIRON_INTERPRETATIONS, LILITH_INTERPRETATIONS, NORTH_NODE_INTERPRETATIONS,
+    PART_OF_FORTUNE_INTERPRETATIONS, VERTEX_INTERPRETATIONS,
+    JUPITER_INTERPRETATIONS, SATURN_INTERPRETATIONS,
+)
 
 app = Flask(__name__)
 
@@ -245,7 +252,7 @@ def get_compat_score(elem1, elem2):
 
 @app.route("/api/birth-chart", methods=["POST"])
 def birth_chart():
-    """Full birth chart — planets, houses, aspects, elements, qualities."""
+    """Full birth chart — planets, houses, aspects, elements, qualities, interpretations."""
     data = request.get_json()
     if not data: return jsonify({"error":"No JSON data"}), 400
     valid, err = validate(data)
@@ -256,6 +263,18 @@ def birth_chart():
         planets = get_all_planets(s)
         houses = get_all_houses(s)
         aspects = [fmt_aspect(a) for a in NatalAspects(s).all_aspects]
+
+        # Build comprehensive interpretations
+        interps = {
+            "sun": SUN_INTERPRETATIONS.get(planets["sun"]["sign"], {}),
+            "moon": MOON_INTERPRETATIONS.get(planets["moon"]["sign"], {}),
+            "rising": RISING_INTERPRETATIONS.get(houses[0]["sign"], {}),
+            "mercury": MERCURY_INTERPRETATIONS.get(planets["mercury"]["sign"], {}),
+            "venus": VENUS_INTERPRETATIONS.get(planets["venus"]["sign"], {}),
+            "mars": MARS_INTERPRETATIONS.get(planets["mars"]["sign"], {}),
+            "jupiter": JUPITER_INTERPRETATIONS.get(planets["jupiter"]["sign"], {}),
+            "saturn": SATURN_INTERPRETATIONS.get(planets["saturn"]["sign"], {}),
+        }
 
         return jsonify({
             "success": True, "tool": "birth_chart",
@@ -268,6 +287,7 @@ def birth_chart():
             "planets": planets, "houses": houses, "aspects": aspects,
             "elements": get_element_dist(planets),
             "qualities": get_quality_dist(planets),
+            "interpretations": interps,
         })
     except Exception as e:
         return jsonify({"error":str(e)}), 500
@@ -315,7 +335,19 @@ def synastry_chart():
 
         p1_planets = get_all_planets(s1)
         p2_planets = get_all_planets(s2)
-        aspects = [fmt_aspect(a) for a in SynastryAspects(s1, s2).all_aspects]
+        raw_aspects = SynastryAspects(s1, s2).all_aspects
+        aspects = [fmt_aspect(a) for a in raw_aspects]
+
+        # Count aspect types for summary
+        harmonious = sum(1 for a in raw_aspects if a.aspect in ["conjunction","trine","sextile"])
+        challenging = sum(1 for a in raw_aspects if a.aspect in ["square","opposition"])
+
+        if harmonious > challenging * 1.5:
+            synastry_summary = "This synastry chart shows predominantly harmonious energy between the two charts. The relationship likely feels natural and supportive, with strong areas of mutual understanding. Watch for complacency — ease can sometimes reduce growth motivation."
+        elif challenging > harmonious * 1.5:
+            synastry_summary = "This synastry chart shows significant dynamic tension between the two charts. The relationship likely generates intense attraction alongside frequent friction. This combination often produces the most passionate and growth-oriented partnerships when both people communicate well."
+        else:
+            synastry_summary = "This synastry chart shows a balanced mix of harmonious and challenging aspects. The relationship offers both comfort and stimulation — enough ease to feel connected and enough tension to keep both partners evolving. This is often the hallmark of enduring partnerships."
 
         # SVG
         chart_data = ChartDataFactory.create_synastry_chart_data(s1, s2)
@@ -332,6 +364,12 @@ def synastry_chart():
                 "planets": p2_planets,
             },
             "aspects": aspects,
+            "aspects_summary": {
+                "total": len(aspects),
+                "harmonious": harmonious,
+                "challenging": challenging,
+            },
+            "synastry_summary": synastry_summary,
             "svg": svg,
         })
     except Exception as e:
@@ -392,18 +430,39 @@ def love_compatibility():
         base = (sun_score * 0.30 + moon_score * 0.30 + venus_score * 0.25 + mars_score * 0.15)
         overall = min(99, max(10, int(base + aspect_bonus)))
 
+        # Score interpretation text
+        if overall >= 80:
+            score_meaning = "Exceptional compatibility. Your planetary energies flow together with remarkable ease across emotional, romantic, and physical dimensions. This level of natural alignment is rare and suggests a deeply intuitive connection."
+        elif overall >= 65:
+            score_meaning = "Strong compatibility with natural chemistry. You share meaningful harmony in several key areas, with enough difference to keep the relationship dynamic. This is a solid foundation for long-term partnership."
+        elif overall >= 50:
+            score_meaning = "Moderate compatibility with a healthy balance of harmony and challenge. Many successful long-term relationships fall in this range because the friction keeps both partners growing while the harmony keeps them connected."
+        elif overall >= 35:
+            score_meaning = "Below average compatibility that requires conscious effort. The planetary tensions between your charts create intensity and passion but also frequent misunderstandings. Communication and patience are essential."
+        else:
+            score_meaning = "Significant planetary contrast between your charts. This does not mean the relationship cannot work, but it does mean both partners will need to actively bridge differences in emotional style, communication, and desire. The attraction may be strong despite the challenges."
+
         return jsonify({
             "success": True, "tool": "love_compatibility",
             "person1": {"name":data["person1"].get("name","Person 1"),
-                        "sun":p1["sun"]["sign"],"moon":p1["moon"]["sign"],"venus":p1["venus"]["sign"]},
+                        "sun":p1["sun"]["sign"],"moon":p1["moon"]["sign"],
+                        "venus":p1["venus"]["sign"],"mars":p1["mars"]["sign"]},
             "person2": {"name":data["person2"].get("name","Person 2"),
-                        "sun":p2["sun"]["sign"],"moon":p2["moon"]["sign"],"venus":p2["venus"]["sign"]},
+                        "sun":p2["sun"]["sign"],"moon":p2["moon"]["sign"],
+                        "venus":p2["venus"]["sign"],"mars":p2["mars"]["sign"]},
             "scores": {
                 "overall": overall,
                 "sun_compatibility": sun_score,
                 "moon_compatibility": moon_score,
                 "venus_compatibility": venus_score,
                 "mars_compatibility": mars_score,
+            },
+            "score_meaning": score_meaning,
+            "score_details": {
+                "sun_meaning": f"Sun compatibility ({sun_score}%) reflects how well your core personalities align. {p1['sun']['sign']} Sun and {p2['sun']['sign']} Sun {'share the same element, creating natural understanding.' if p1['sun']['element'] == p2['sun']['element'] else 'belong to different elements, bringing contrasting but potentially complementary energies.'}",
+                "moon_meaning": f"Moon compatibility ({moon_score}%) reveals emotional attunement. {p1['moon']['sign']} Moon and {p2['moon']['sign']} Moon {'share emotional wavelengths, making comfort and nurturing feel instinctive.' if p1['moon']['element'] == p2['moon']['element'] else 'process emotions differently, which can create growth opportunities if both partners stay patient.'}",
+                "venus_meaning": f"Venus compatibility ({venus_score}%) measures romantic and aesthetic harmony. {p1['venus']['sign']} Venus and {p2['venus']['sign']} Venus {'express love in similar ways, creating natural romantic flow.' if p1['venus']['element'] == p2['venus']['element'] else 'have different love languages, requiring conscious effort to make each partner feel appreciated.'}",
+                "mars_meaning": f"Mars compatibility ({mars_score}%) indicates physical chemistry and conflict style. {p1['mars']['sign']} Mars and {p2['mars']['sign']} Mars {'share a similar drive and energy level, supporting passion and teamwork.' if p1['mars']['element'] == p2['mars']['element'] else 'channel energy differently, which can create exciting tension or frustrating clashes depending on maturity.'}",
             },
             "aspects_summary": {
                 "total": len(aspects),
@@ -429,11 +488,13 @@ def sun_sign():
     try:
         s = make_subject(data)
         p = fmt_planet(s.sun)
+        interp = SUN_INTERPRETATIONS.get(p["sign"], {})
         return jsonify({
             "success":True, "tool":"sun_sign",
             "name": data.get("name","User"),
             "sun": p,
-            "description": f"Your Sun is in {p['sign']} at {p['degree']}° in House {p['house']}.",
+            "description": f"Your Sun is in {p['sign']} at {p['degree']}\u00b0 in House {p['house']}.",
+            "interpretation": interp,
         })
     except Exception as e:
         return jsonify({"error":str(e)}), 500
@@ -453,11 +514,13 @@ def moon_sign():
     try:
         s = make_subject(data)
         p = fmt_planet(s.moon)
+        interp = MOON_INTERPRETATIONS.get(p["sign"], {})
         return jsonify({
             "success":True, "tool":"moon_sign",
             "name": data.get("name","User"),
             "moon": p,
-            "description": f"Your Moon is in {p['sign']} at {p['degree']}° in House {p['house']}.",
+            "description": f"Your Moon is in {p['sign']} at {p['degree']}\u00b0 in House {p['house']}.",
+            "interpretation": interp,
         })
     except Exception as e:
         return jsonify({"error":str(e)}), 500
@@ -478,6 +541,7 @@ def rising_sign():
         s = make_subject(data)
         h = s.first_house
         sign = SIGN_FULL.get(h.sign, h.sign)
+        interp = RISING_INTERPRETATIONS.get(sign, {})
         return jsonify({
             "success":True, "tool":"rising_sign",
             "name": data.get("name","User"),
@@ -487,7 +551,8 @@ def rising_sign():
                 "quality": SIGN_QUALITY.get(sign,""),
                 "ruler": SIGN_RULER.get(sign,""),
             },
-            "description": f"Your Rising Sign (Ascendant) is {sign} at {round(h.position,2)}°.",
+            "description": f"Your Rising Sign (Ascendant) is {sign} at {round(h.position,2)}\u00b0.",
+            "interpretation": interp,
         })
     except Exception as e:
         return jsonify({"error":str(e)}), 500
@@ -509,7 +574,7 @@ def big_three():
         sun = fmt_planet(s.sun)
         moon = fmt_planet(s.moon)
         h = s.first_house
-        rising_sign = SIGN_FULL.get(h.sign, h.sign)
+        rising_s = SIGN_FULL.get(h.sign, h.sign)
 
         return jsonify({
             "success":True, "tool":"big_three",
@@ -517,10 +582,15 @@ def big_three():
             "sun": sun,
             "moon": moon,
             "rising": {
-                "sign": rising_sign, "degree": round(h.position,2),
-                "element": SIGN_ELEMENT.get(rising_sign,""),
-                "quality": SIGN_QUALITY.get(rising_sign,""),
-                "ruler": SIGN_RULER.get(rising_sign,""),
+                "sign": rising_s, "degree": round(h.position,2),
+                "element": SIGN_ELEMENT.get(rising_s,""),
+                "quality": SIGN_QUALITY.get(rising_s,""),
+                "ruler": SIGN_RULER.get(rising_s,""),
+            },
+            "interpretations": {
+                "sun": SUN_INTERPRETATIONS.get(sun["sign"], {}),
+                "moon": MOON_INTERPRETATIONS.get(moon["sign"], {}),
+                "rising": RISING_INTERPRETATIONS.get(rising_s, {}),
             },
         })
     except Exception as e:
@@ -541,11 +611,13 @@ def venus_sign():
     try:
         s = make_subject(data)
         p = fmt_planet(s.venus)
+        interp = VENUS_INTERPRETATIONS.get(p["sign"], {})
         return jsonify({
             "success":True, "tool":"venus_sign",
             "name": data.get("name","User"),
             "venus": p,
-            "description": f"Your Venus is in {p['sign']} at {p['degree']}° in House {p['house']}.",
+            "description": f"Your Venus is in {p['sign']} at {p['degree']}\u00b0 in House {p['house']}.",
+            "interpretation": interp,
         })
     except Exception as e:
         return jsonify({"error":str(e)}), 500
@@ -565,11 +637,13 @@ def chiron_sign():
     try:
         s = make_subject(data)
         p = fmt_planet(s.chiron)
+        interp = CHIRON_INTERPRETATIONS.get(p["sign"], {})
         return jsonify({
             "success":True, "tool":"chiron_sign",
             "name": data.get("name","User"),
             "chiron": p,
-            "description": f"Your Chiron (Wounded Healer) is in {p['sign']} at {p['degree']}° in House {p['house']}.",
+            "description": f"Your Chiron (Wounded Healer) is in {p['sign']} at {p['degree']}\u00b0 in House {p['house']}.",
+            "interpretation": interp,
         })
     except Exception as e:
         return jsonify({"error":str(e)}), 500
@@ -589,11 +663,13 @@ def lilith_sign():
     try:
         s = make_subject(data)
         p = fmt_planet(s.mean_lilith)
+        interp = LILITH_INTERPRETATIONS.get(p["sign"], {})
         return jsonify({
             "success":True, "tool":"lilith_sign",
             "name": data.get("name","User"),
             "lilith": p,
-            "description": f"Your Black Moon Lilith is in {p['sign']} at {p['degree']}° in House {p['house']}.",
+            "description": f"Your Black Moon Lilith is in {p['sign']} at {p['degree']}\u00b0 in House {p['house']}.",
+            "interpretation": interp,
         })
     except Exception as e:
         return jsonify({"error":str(e)}), 500
@@ -614,12 +690,14 @@ def north_node():
         s = make_subject(data)
         nn = fmt_planet(s.true_north_lunar_node)
         sn = fmt_planet(s.true_south_lunar_node)
+        interp = NORTH_NODE_INTERPRETATIONS.get(nn["sign"], {})
         return jsonify({
             "success":True, "tool":"north_node",
             "name": data.get("name","User"),
             "north_node": nn,
             "south_node": sn,
-            "description": f"Your North Node is in {nn['sign']} at {nn['degree']}° (House {nn['house']}). South Node is in {sn['sign']}.",
+            "description": f"Your North Node is in {nn['sign']} at {nn['degree']}\u00b0 (House {nn['house']}). South Node is in {sn['sign']}.",
+            "interpretation": interp,
         })
     except Exception as e:
         return jsonify({"error":str(e)}), 500
@@ -659,7 +737,8 @@ def part_of_fortune():
             "success":True, "tool":"part_of_fortune",
             "name": data.get("name","User"),
             "part_of_fortune": pof,
-            "description": f"Your Part of Fortune is in {pof['sign']} at {pof['degree']}° ({pof['chart_type']} chart formula used).",
+            "description": f"Your Part of Fortune is in {pof['sign']} at {pof['degree']}\u00b0 ({pof['chart_type']} chart formula used).",
+            "interpretation": PART_OF_FORTUNE_INTERPRETATIONS.get(pof["sign"], {}),
         })
     except Exception as e:
         return jsonify({"error":str(e)}), 500
@@ -692,7 +771,8 @@ def vertex():
                 "abs_degree": round(anti_abs, 2),
                 "element": SIGN_ELEMENT.get(anti_sign,""),
             },
-            "description": f"Your Vertex is in {vtx['sign']} at {vtx['degree']}°. Anti-Vertex is in {anti_sign}.",
+            "description": f"Your Vertex is in {vtx['sign']} at {vtx['degree']}\u00b0. Anti-Vertex is in {anti_sign}.",
+            "interpretation": VERTEX_INTERPRETATIONS.get(vtx["sign"], {}),
         })
     except Exception as e:
         return jsonify({"error":str(e)}), 500
