@@ -38,6 +38,10 @@ from interpretations import (
     PART_OF_FORTUNE_INTERPRETATIONS, VERTEX_INTERPRETATIONS,
     JUPITER_INTERPRETATIONS, SATURN_INTERPRETATIONS,
 )
+from synastry_interpretations import (
+    categorize_all_aspects,
+    calculate_house_overlays,
+)
 
 app = Flask(__name__)
 
@@ -318,6 +322,7 @@ def birth_chart_svg():
 def synastry_chart():
     """
     Synastry chart — compare two people's charts.
+    Includes: categorized aspects, house overlays, bi-wheel SVG.
     Requires person1 and person2 objects in JSON.
     """
     data = request.get_json()
@@ -335,6 +340,9 @@ def synastry_chart():
 
         p1_planets = get_all_planets(s1)
         p2_planets = get_all_planets(s2)
+        p1_houses = get_all_houses(s1)
+        p2_houses = get_all_houses(s2)
+
         raw_aspects = SynastryAspects(s1, s2).all_aspects
         aspects = [fmt_aspect(a) for a in raw_aspects]
 
@@ -349,7 +357,14 @@ def synastry_chart():
         else:
             synastry_summary = "This synastry chart shows a balanced mix of harmonious and challenging aspects. The relationship offers both comfort and stimulation — enough ease to feel connected and enough tension to keep both partners evolving. This is often the hallmark of enduring partnerships."
 
-        # SVG
+        # ── Phase 1: Categorize aspects ──
+        aspect_categories = categorize_all_aspects(aspects)
+
+        # ── Phase 2: House overlays ──
+        p1_in_p2_houses = calculate_house_overlays(p1_planets, p2_houses)
+        p2_in_p1_houses = calculate_house_overlays(p2_planets, p1_houses)
+
+        # ── Phase 3: SVG bi-wheel ──
         chart_data = ChartDataFactory.create_synastry_chart_data(s1, s2)
         svg = ChartDrawer(chart_data=chart_data).generate_svg_string()
 
@@ -358,16 +373,23 @@ def synastry_chart():
             "person1": {
                 "name": data["person1"].get("name","Person 1"),
                 "planets": p1_planets,
+                "houses": p1_houses,
             },
             "person2": {
                 "name": data["person2"].get("name","Person 2"),
                 "planets": p2_planets,
+                "houses": p2_houses,
             },
             "aspects": aspects,
             "aspects_summary": {
                 "total": len(aspects),
                 "harmonious": harmonious,
                 "challenging": challenging,
+            },
+            "aspect_categories": aspect_categories,
+            "house_overlays": {
+                "person1_in_person2": p1_in_p2_houses,
+                "person2_in_person1": p2_in_p1_houses,
             },
             "synastry_summary": synastry_summary,
             "svg": svg,
