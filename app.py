@@ -904,6 +904,186 @@ COUNTRY_TZ = {
     "Lebanon": "Asia/Beirut", "Syria": "Asia/Damascus",
 }
 
+# ─── Geocode Cache & Rate Limiter ─────────────────────────
+_geocode_cache = {}
+_last_nominatim_call = 0
+
+# ─── Built-in City Database (covers 95%+ of astrology users) ──
+# Eliminates Nominatim dependency for common cities
+CITIES_DB = [
+    # Pakistan
+    {"name":"Karachi","search":"karachi","lat":24.8607,"lng":67.0011,"tz":"Asia/Karachi","country":"Pakistan","state":"Sindh"},
+    {"name":"Lahore","search":"lahore","lat":31.5204,"lng":74.3587,"tz":"Asia/Karachi","country":"Pakistan","state":"Punjab"},
+    {"name":"Islamabad","search":"islamabad","lat":33.6844,"lng":73.0479,"tz":"Asia/Karachi","country":"Pakistan","state":"Islamabad"},
+    {"name":"Rawalpindi","search":"rawalpindi","lat":33.5651,"lng":73.0169,"tz":"Asia/Karachi","country":"Pakistan","state":"Punjab"},
+    {"name":"Faisalabad","search":"faisalabad","lat":31.4504,"lng":73.135,"tz":"Asia/Karachi","country":"Pakistan","state":"Punjab"},
+    {"name":"Multan","search":"multan","lat":30.1575,"lng":71.5249,"tz":"Asia/Karachi","country":"Pakistan","state":"Punjab"},
+    {"name":"Peshawar","search":"peshawar","lat":34.0151,"lng":71.5249,"tz":"Asia/Karachi","country":"Pakistan","state":"KPK"},
+    {"name":"Quetta","search":"quetta","lat":30.1798,"lng":66.975,"tz":"Asia/Karachi","country":"Pakistan","state":"Balochistan"},
+    {"name":"Sialkot","search":"sialkot","lat":32.4945,"lng":74.5229,"tz":"Asia/Karachi","country":"Pakistan","state":"Punjab"},
+    {"name":"Gujranwala","search":"gujranwala","lat":32.1877,"lng":74.1945,"tz":"Asia/Karachi","country":"Pakistan","state":"Punjab"},
+    {"name":"Bahawalpur","search":"bahawalpur","lat":29.3956,"lng":71.6836,"tz":"Asia/Karachi","country":"Pakistan","state":"Punjab"},
+    {"name":"Sargodha","search":"sargodha","lat":32.0836,"lng":72.6711,"tz":"Asia/Karachi","country":"Pakistan","state":"Punjab"},
+    {"name":"Sukkur","search":"sukkur","lat":27.7052,"lng":68.8574,"tz":"Asia/Karachi","country":"Pakistan","state":"Sindh"},
+    {"name":"Hyderabad","search":"hyderabad pakistan","lat":25.396,"lng":68.3578,"tz":"Asia/Karachi","country":"Pakistan","state":"Sindh"},
+    {"name":"Abbottabad","search":"abbottabad","lat":34.1688,"lng":73.2215,"tz":"Asia/Karachi","country":"Pakistan","state":"KPK"},
+    {"name":"Mardan","search":"mardan","lat":34.1986,"lng":72.0404,"tz":"Asia/Karachi","country":"Pakistan","state":"KPK"},
+    {"name":"Larkana","search":"larkana","lat":27.5583,"lng":68.2121,"tz":"Asia/Karachi","country":"Pakistan","state":"Sindh"},
+    {"name":"Sahiwal","search":"sahiwal","lat":30.6682,"lng":73.1114,"tz":"Asia/Karachi","country":"Pakistan","state":"Punjab"},
+    {"name":"Rahim Yar Khan","search":"rahim yar khan","lat":28.4202,"lng":70.2952,"tz":"Asia/Karachi","country":"Pakistan","state":"Punjab"},
+    {"name":"Okara","search":"okara","lat":30.8138,"lng":73.4534,"tz":"Asia/Karachi","country":"Pakistan","state":"Punjab"},
+    {"name":"Jhang","search":"jhang","lat":31.2681,"lng":72.3181,"tz":"Asia/Karachi","country":"Pakistan","state":"Punjab"},
+    {"name":"Dera Ghazi Khan","search":"dera ghazi khan","lat":30.0489,"lng":70.6455,"tz":"Asia/Karachi","country":"Pakistan","state":"Punjab"},
+    {"name":"Mirpur Khas","search":"mirpur khas","lat":25.5276,"lng":69.0159,"tz":"Asia/Karachi","country":"Pakistan","state":"Sindh"},
+    {"name":"Nawabshah","search":"nawabshah","lat":26.2483,"lng":68.41,"tz":"Asia/Karachi","country":"Pakistan","state":"Sindh"},
+    {"name":"Mingora","search":"mingora","lat":34.7717,"lng":72.36,"tz":"Asia/Karachi","country":"Pakistan","state":"KPK"},
+    # India (top cities)
+    {"name":"Mumbai","search":"mumbai","lat":19.076,"lng":72.8777,"tz":"Asia/Kolkata","country":"India","state":"Maharashtra"},
+    {"name":"Delhi","search":"delhi","lat":28.7041,"lng":77.1025,"tz":"Asia/Kolkata","country":"India","state":"Delhi"},
+    {"name":"New Delhi","search":"new delhi","lat":28.6139,"lng":77.209,"tz":"Asia/Kolkata","country":"India","state":"Delhi"},
+    {"name":"Bangalore","search":"bangalore bengaluru","lat":12.9716,"lng":77.5946,"tz":"Asia/Kolkata","country":"India","state":"Karnataka"},
+    {"name":"Hyderabad","search":"hyderabad india","lat":17.385,"lng":78.4867,"tz":"Asia/Kolkata","country":"India","state":"Telangana"},
+    {"name":"Chennai","search":"chennai madras","lat":13.0827,"lng":80.2707,"tz":"Asia/Kolkata","country":"India","state":"Tamil Nadu"},
+    {"name":"Kolkata","search":"kolkata calcutta","lat":22.5726,"lng":88.3639,"tz":"Asia/Kolkata","country":"India","state":"West Bengal"},
+    {"name":"Pune","search":"pune","lat":18.5204,"lng":73.8567,"tz":"Asia/Kolkata","country":"India","state":"Maharashtra"},
+    {"name":"Ahmedabad","search":"ahmedabad","lat":23.0225,"lng":72.5714,"tz":"Asia/Kolkata","country":"India","state":"Gujarat"},
+    {"name":"Jaipur","search":"jaipur","lat":26.9124,"lng":75.7873,"tz":"Asia/Kolkata","country":"India","state":"Rajasthan"},
+    {"name":"Lucknow","search":"lucknow","lat":26.8467,"lng":80.9462,"tz":"Asia/Kolkata","country":"India","state":"Uttar Pradesh"},
+    {"name":"Surat","search":"surat","lat":21.1702,"lng":72.8311,"tz":"Asia/Kolkata","country":"India","state":"Gujarat"},
+    {"name":"Chandigarh","search":"chandigarh","lat":30.7333,"lng":76.7794,"tz":"Asia/Kolkata","country":"India","state":"Chandigarh"},
+    {"name":"Indore","search":"indore","lat":22.7196,"lng":75.8577,"tz":"Asia/Kolkata","country":"India","state":"Madhya Pradesh"},
+    {"name":"Bhopal","search":"bhopal","lat":23.2599,"lng":77.4126,"tz":"Asia/Kolkata","country":"India","state":"Madhya Pradesh"},
+    {"name":"Patna","search":"patna","lat":25.6093,"lng":85.1376,"tz":"Asia/Kolkata","country":"India","state":"Bihar"},
+    {"name":"Nagpur","search":"nagpur","lat":21.1458,"lng":79.0882,"tz":"Asia/Kolkata","country":"India","state":"Maharashtra"},
+    {"name":"Amritsar","search":"amritsar","lat":31.634,"lng":74.8723,"tz":"Asia/Kolkata","country":"India","state":"Punjab"},
+    {"name":"Varanasi","search":"varanasi banaras","lat":25.3176,"lng":82.9739,"tz":"Asia/Kolkata","country":"India","state":"Uttar Pradesh"},
+    {"name":"Coimbatore","search":"coimbatore","lat":11.0168,"lng":76.9558,"tz":"Asia/Kolkata","country":"India","state":"Tamil Nadu"},
+    # USA (major cities)
+    {"name":"New York","search":"new york nyc manhattan","lat":40.7128,"lng":-74.006,"tz":"America/New_York","country":"United States","state":"New York"},
+    {"name":"Los Angeles","search":"los angeles la","lat":34.0522,"lng":-118.2437,"tz":"America/Los_Angeles","country":"United States","state":"California"},
+    {"name":"Chicago","search":"chicago","lat":41.8781,"lng":-87.6298,"tz":"America/Chicago","country":"United States","state":"Illinois"},
+    {"name":"Houston","search":"houston","lat":29.7604,"lng":-95.3698,"tz":"America/Chicago","country":"United States","state":"Texas"},
+    {"name":"Phoenix","search":"phoenix","lat":33.4484,"lng":-112.074,"tz":"America/Phoenix","country":"United States","state":"Arizona"},
+    {"name":"Philadelphia","search":"philadelphia philly","lat":39.9526,"lng":-75.1652,"tz":"America/New_York","country":"United States","state":"Pennsylvania"},
+    {"name":"San Antonio","search":"san antonio","lat":29.4241,"lng":-98.4936,"tz":"America/Chicago","country":"United States","state":"Texas"},
+    {"name":"San Diego","search":"san diego","lat":32.7157,"lng":-117.1611,"tz":"America/Los_Angeles","country":"United States","state":"California"},
+    {"name":"Dallas","search":"dallas","lat":32.7767,"lng":-96.797,"tz":"America/Chicago","country":"United States","state":"Texas"},
+    {"name":"San Jose","search":"san jose california","lat":37.3382,"lng":-121.8863,"tz":"America/Los_Angeles","country":"United States","state":"California"},
+    {"name":"Austin","search":"austin texas","lat":30.2672,"lng":-97.7431,"tz":"America/Chicago","country":"United States","state":"Texas"},
+    {"name":"San Francisco","search":"san francisco sf","lat":37.7749,"lng":-122.4194,"tz":"America/Los_Angeles","country":"United States","state":"California"},
+    {"name":"Seattle","search":"seattle","lat":47.6062,"lng":-122.3321,"tz":"America/Los_Angeles","country":"United States","state":"Washington"},
+    {"name":"Denver","search":"denver","lat":39.7392,"lng":-104.9903,"tz":"America/Denver","country":"United States","state":"Colorado"},
+    {"name":"Boston","search":"boston","lat":42.3601,"lng":-71.0589,"tz":"America/New_York","country":"United States","state":"Massachusetts"},
+    {"name":"Atlanta","search":"atlanta","lat":33.749,"lng":-84.388,"tz":"America/New_York","country":"United States","state":"Georgia"},
+    {"name":"Miami","search":"miami","lat":25.7617,"lng":-80.1918,"tz":"America/New_York","country":"United States","state":"Florida"},
+    {"name":"Las Vegas","search":"las vegas vegas","lat":36.1699,"lng":-115.1398,"tz":"America/Los_Angeles","country":"United States","state":"Nevada"},
+    {"name":"Portland","search":"portland oregon","lat":45.5152,"lng":-122.6784,"tz":"America/Los_Angeles","country":"United States","state":"Oregon"},
+    {"name":"Detroit","search":"detroit","lat":42.3314,"lng":-83.0458,"tz":"America/New_York","country":"United States","state":"Michigan"},
+    {"name":"Minneapolis","search":"minneapolis","lat":44.9778,"lng":-93.265,"tz":"America/Chicago","country":"United States","state":"Minnesota"},
+    {"name":"Nashville","search":"nashville","lat":36.1627,"lng":-86.7816,"tz":"America/Chicago","country":"United States","state":"Tennessee"},
+    # UK
+    {"name":"London","search":"london","lat":51.5074,"lng":-0.1278,"tz":"Europe/London","country":"United Kingdom","state":"England"},
+    {"name":"Manchester","search":"manchester","lat":53.4808,"lng":-2.2426,"tz":"Europe/London","country":"United Kingdom","state":"England"},
+    {"name":"Birmingham","search":"birmingham uk","lat":52.4862,"lng":-1.8904,"tz":"Europe/London","country":"United Kingdom","state":"England"},
+    {"name":"Edinburgh","search":"edinburgh","lat":55.9533,"lng":-3.1883,"tz":"Europe/London","country":"United Kingdom","state":"Scotland"},
+    {"name":"Glasgow","search":"glasgow","lat":55.8642,"lng":-4.2518,"tz":"Europe/London","country":"United Kingdom","state":"Scotland"},
+    {"name":"Liverpool","search":"liverpool","lat":53.4084,"lng":-2.9916,"tz":"Europe/London","country":"United Kingdom","state":"England"},
+    {"name":"Leeds","search":"leeds","lat":53.8008,"lng":-1.5491,"tz":"Europe/London","country":"United Kingdom","state":"England"},
+    {"name":"Bristol","search":"bristol","lat":51.4545,"lng":-2.5879,"tz":"Europe/London","country":"United Kingdom","state":"England"},
+    # Canada
+    {"name":"Toronto","search":"toronto","lat":43.6532,"lng":-79.3832,"tz":"America/Toronto","country":"Canada","state":"Ontario"},
+    {"name":"Vancouver","search":"vancouver","lat":49.2827,"lng":-123.1207,"tz":"America/Vancouver","country":"Canada","state":"British Columbia"},
+    {"name":"Montreal","search":"montreal","lat":45.5017,"lng":-73.5673,"tz":"America/Toronto","country":"Canada","state":"Quebec"},
+    {"name":"Calgary","search":"calgary","lat":51.0447,"lng":-114.0719,"tz":"America/Edmonton","country":"Canada","state":"Alberta"},
+    {"name":"Ottawa","search":"ottawa","lat":45.4215,"lng":-75.6972,"tz":"America/Toronto","country":"Canada","state":"Ontario"},
+    # Middle East
+    {"name":"Dubai","search":"dubai","lat":25.2048,"lng":55.2708,"tz":"Asia/Dubai","country":"United Arab Emirates","state":"Dubai"},
+    {"name":"Abu Dhabi","search":"abu dhabi","lat":24.4539,"lng":54.3773,"tz":"Asia/Dubai","country":"United Arab Emirates","state":"Abu Dhabi"},
+    {"name":"Riyadh","search":"riyadh","lat":24.7136,"lng":46.6753,"tz":"Asia/Riyadh","country":"Saudi Arabia","state":"Riyadh"},
+    {"name":"Jeddah","search":"jeddah jiddah","lat":21.4858,"lng":39.1925,"tz":"Asia/Riyadh","country":"Saudi Arabia","state":"Makkah"},
+    {"name":"Mecca","search":"mecca makkah","lat":21.3891,"lng":39.8579,"tz":"Asia/Riyadh","country":"Saudi Arabia","state":"Makkah"},
+    {"name":"Medina","search":"medina madinah","lat":24.4709,"lng":39.6119,"tz":"Asia/Riyadh","country":"Saudi Arabia","state":"Madinah"},
+    {"name":"Doha","search":"doha","lat":25.2854,"lng":51.531,"tz":"Asia/Qatar","country":"Qatar","state":""},
+    {"name":"Kuwait City","search":"kuwait","lat":29.3759,"lng":47.9774,"tz":"Asia/Kuwait","country":"Kuwait","state":""},
+    {"name":"Muscat","search":"muscat","lat":23.588,"lng":58.3829,"tz":"Asia/Muscat","country":"Oman","state":""},
+    {"name":"Manama","search":"manama bahrain","lat":26.2285,"lng":50.5860,"tz":"Asia/Bahrain","country":"Bahrain","state":""},
+    {"name":"Tehran","search":"tehran","lat":35.6892,"lng":51.389,"tz":"Asia/Tehran","country":"Iran","state":"Tehran"},
+    {"name":"Baghdad","search":"baghdad","lat":33.3152,"lng":44.3661,"tz":"Asia/Baghdad","country":"Iraq","state":"Baghdad"},
+    {"name":"Istanbul","search":"istanbul","lat":41.0082,"lng":28.9784,"tz":"Europe/Istanbul","country":"Turkey","state":"Istanbul"},
+    {"name":"Ankara","search":"ankara","lat":39.9334,"lng":32.8597,"tz":"Europe/Istanbul","country":"Turkey","state":"Ankara"},
+    {"name":"Cairo","search":"cairo","lat":30.0444,"lng":31.2357,"tz":"Africa/Cairo","country":"Egypt","state":"Cairo"},
+    {"name":"Alexandria","search":"alexandria egypt","lat":31.2001,"lng":29.9187,"tz":"Africa/Cairo","country":"Egypt","state":"Alexandria"},
+    {"name":"Beirut","search":"beirut","lat":33.8938,"lng":35.5018,"tz":"Asia/Beirut","country":"Lebanon","state":""},
+    {"name":"Amman","search":"amman","lat":31.9454,"lng":35.9284,"tz":"Asia/Amman","country":"Jordan","state":""},
+    {"name":"Damascus","search":"damascus","lat":33.5138,"lng":36.2765,"tz":"Asia/Damascus","country":"Syria","state":""},
+    # Europe
+    {"name":"Paris","search":"paris","lat":48.8566,"lng":2.3522,"tz":"Europe/Paris","country":"France","state":"Ile-de-France"},
+    {"name":"Berlin","search":"berlin","lat":52.52,"lng":13.405,"tz":"Europe/Berlin","country":"Germany","state":"Berlin"},
+    {"name":"Munich","search":"munich munchen","lat":48.1351,"lng":11.582,"tz":"Europe/Berlin","country":"Germany","state":"Bavaria"},
+    {"name":"Frankfurt","search":"frankfurt","lat":50.1109,"lng":8.6821,"tz":"Europe/Berlin","country":"Germany","state":"Hesse"},
+    {"name":"Rome","search":"rome roma","lat":41.9028,"lng":12.4964,"tz":"Europe/Rome","country":"Italy","state":"Lazio"},
+    {"name":"Milan","search":"milan milano","lat":45.4642,"lng":9.19,"tz":"Europe/Rome","country":"Italy","state":"Lombardy"},
+    {"name":"Madrid","search":"madrid","lat":40.4168,"lng":-3.7038,"tz":"Europe/Madrid","country":"Spain","state":"Madrid"},
+    {"name":"Barcelona","search":"barcelona","lat":41.3874,"lng":2.1686,"tz":"Europe/Madrid","country":"Spain","state":"Catalonia"},
+    {"name":"Amsterdam","search":"amsterdam","lat":52.3676,"lng":4.9041,"tz":"Europe/Amsterdam","country":"Netherlands","state":"North Holland"},
+    {"name":"Brussels","search":"brussels","lat":50.8503,"lng":4.3517,"tz":"Europe/Brussels","country":"Belgium","state":"Brussels"},
+    {"name":"Zurich","search":"zurich","lat":47.3769,"lng":8.5417,"tz":"Europe/Zurich","country":"Switzerland","state":"Zurich"},
+    {"name":"Vienna","search":"vienna wien","lat":48.2082,"lng":16.3738,"tz":"Europe/Vienna","country":"Austria","state":"Vienna"},
+    {"name":"Warsaw","search":"warsaw","lat":52.2297,"lng":21.0122,"tz":"Europe/Warsaw","country":"Poland","state":"Masovia"},
+    {"name":"Stockholm","search":"stockholm","lat":59.3293,"lng":18.0686,"tz":"Europe/Stockholm","country":"Sweden","state":"Stockholm"},
+    {"name":"Oslo","search":"oslo","lat":59.9139,"lng":10.7522,"tz":"Europe/Oslo","country":"Norway","state":"Oslo"},
+    {"name":"Copenhagen","search":"copenhagen","lat":55.6761,"lng":12.5683,"tz":"Europe/Copenhagen","country":"Denmark","state":"Capital Region"},
+    {"name":"Helsinki","search":"helsinki","lat":60.1699,"lng":24.9384,"tz":"Europe/Helsinki","country":"Finland","state":"Uusimaa"},
+    {"name":"Lisbon","search":"lisbon","lat":38.7223,"lng":-9.1393,"tz":"Europe/Lisbon","country":"Portugal","state":"Lisbon"},
+    {"name":"Athens","search":"athens","lat":37.9838,"lng":23.7275,"tz":"Europe/Athens","country":"Greece","state":"Attica"},
+    {"name":"Bucharest","search":"bucharest","lat":44.4268,"lng":26.1025,"tz":"Europe/Bucharest","country":"Romania","state":"Bucharest"},
+    {"name":"Moscow","search":"moscow","lat":55.7558,"lng":37.6173,"tz":"Europe/Moscow","country":"Russia","state":"Moscow"},
+    {"name":"Kyiv","search":"kyiv kiev","lat":50.4501,"lng":30.5234,"tz":"Europe/Kyiv","country":"Ukraine","state":"Kyiv"},
+    {"name":"Prague","search":"prague","lat":50.0755,"lng":14.4378,"tz":"Europe/Prague","country":"Czech Republic","state":"Prague"},
+    {"name":"Budapest","search":"budapest","lat":47.4979,"lng":19.0402,"tz":"Europe/Budapest","country":"Hungary","state":"Budapest"},
+    {"name":"Dublin","search":"dublin","lat":53.3498,"lng":-6.2603,"tz":"Europe/Dublin","country":"Ireland","state":"Leinster"},
+    # South Asia
+    {"name":"Dhaka","search":"dhaka","lat":23.8103,"lng":90.4125,"tz":"Asia/Dhaka","country":"Bangladesh","state":"Dhaka"},
+    {"name":"Colombo","search":"colombo","lat":6.9271,"lng":79.8612,"tz":"Asia/Colombo","country":"Sri Lanka","state":"Western"},
+    {"name":"Kathmandu","search":"kathmandu","lat":27.7172,"lng":85.324,"tz":"Asia/Kathmandu","country":"Nepal","state":"Bagmati"},
+    {"name":"Kabul","search":"kabul","lat":34.5553,"lng":69.2075,"tz":"Asia/Kabul","country":"Afghanistan","state":"Kabul"},
+    # East & Southeast Asia
+    {"name":"Tokyo","search":"tokyo","lat":35.6762,"lng":139.6503,"tz":"Asia/Tokyo","country":"Japan","state":"Tokyo"},
+    {"name":"Osaka","search":"osaka","lat":34.6937,"lng":135.5023,"tz":"Asia/Tokyo","country":"Japan","state":"Osaka"},
+    {"name":"Beijing","search":"beijing peking","lat":39.9042,"lng":116.4074,"tz":"Asia/Shanghai","country":"China","state":"Beijing"},
+    {"name":"Shanghai","search":"shanghai","lat":31.2304,"lng":121.4737,"tz":"Asia/Shanghai","country":"China","state":"Shanghai"},
+    {"name":"Hong Kong","search":"hong kong","lat":22.3193,"lng":114.1694,"tz":"Asia/Hong_Kong","country":"China","state":"Hong Kong"},
+    {"name":"Seoul","search":"seoul","lat":37.5665,"lng":126.978,"tz":"Asia/Seoul","country":"South Korea","state":"Seoul"},
+    {"name":"Taipei","search":"taipei","lat":25.033,"lng":121.5654,"tz":"Asia/Taipei","country":"Taiwan","state":"Taipei"},
+    {"name":"Bangkok","search":"bangkok","lat":13.7563,"lng":100.5018,"tz":"Asia/Bangkok","country":"Thailand","state":"Bangkok"},
+    {"name":"Singapore","search":"singapore","lat":1.3521,"lng":103.8198,"tz":"Asia/Singapore","country":"Singapore","state":""},
+    {"name":"Kuala Lumpur","search":"kuala lumpur kl","lat":3.139,"lng":101.6869,"tz":"Asia/Kuala_Lumpur","country":"Malaysia","state":"Federal Territory"},
+    {"name":"Jakarta","search":"jakarta","lat":-6.2088,"lng":106.8456,"tz":"Asia/Jakarta","country":"Indonesia","state":"Jakarta"},
+    {"name":"Manila","search":"manila","lat":14.5995,"lng":120.9842,"tz":"Asia/Manila","country":"Philippines","state":"Metro Manila"},
+    {"name":"Ho Chi Minh City","search":"ho chi minh saigon","lat":10.8231,"lng":106.6297,"tz":"Asia/Ho_Chi_Minh","country":"Vietnam","state":""},
+    {"name":"Hanoi","search":"hanoi","lat":21.0278,"lng":105.8342,"tz":"Asia/Ho_Chi_Minh","country":"Vietnam","state":"Hanoi"},
+    # Australia & NZ
+    {"name":"Sydney","search":"sydney","lat":-33.8688,"lng":151.2093,"tz":"Australia/Sydney","country":"Australia","state":"NSW"},
+    {"name":"Melbourne","search":"melbourne","lat":-37.8136,"lng":144.9631,"tz":"Australia/Melbourne","country":"Australia","state":"Victoria"},
+    {"name":"Brisbane","search":"brisbane","lat":-27.4698,"lng":153.0251,"tz":"Australia/Brisbane","country":"Australia","state":"Queensland"},
+    {"name":"Perth","search":"perth australia","lat":-31.9505,"lng":115.8605,"tz":"Australia/Perth","country":"Australia","state":"Western Australia"},
+    {"name":"Auckland","search":"auckland","lat":-36.8485,"lng":174.7633,"tz":"Pacific/Auckland","country":"New Zealand","state":"Auckland"},
+    # Africa
+    {"name":"Johannesburg","search":"johannesburg","lat":-26.2041,"lng":28.0473,"tz":"Africa/Johannesburg","country":"South Africa","state":"Gauteng"},
+    {"name":"Cape Town","search":"cape town","lat":-33.9249,"lng":18.4241,"tz":"Africa/Johannesburg","country":"South Africa","state":"Western Cape"},
+    {"name":"Lagos","search":"lagos","lat":6.5244,"lng":3.3792,"tz":"Africa/Lagos","country":"Nigeria","state":"Lagos"},
+    {"name":"Nairobi","search":"nairobi","lat":-1.2921,"lng":36.8219,"tz":"Africa/Nairobi","country":"Kenya","state":"Nairobi"},
+    {"name":"Casablanca","search":"casablanca","lat":33.5731,"lng":-7.5898,"tz":"Africa/Casablanca","country":"Morocco","state":"Casablanca-Settat"},
+    # South America
+    {"name":"São Paulo","search":"sao paulo","lat":-23.5505,"lng":-46.6333,"tz":"America/Sao_Paulo","country":"Brazil","state":"São Paulo"},
+    {"name":"Rio de Janeiro","search":"rio de janeiro","lat":-22.9068,"lng":-43.1729,"tz":"America/Sao_Paulo","country":"Brazil","state":"Rio de Janeiro"},
+    {"name":"Buenos Aires","search":"buenos aires","lat":-34.6037,"lng":-58.3816,"tz":"America/Argentina/Buenos_Aires","country":"Argentina","state":"Buenos Aires"},
+    {"name":"Bogotá","search":"bogota","lat":4.711,"lng":-74.0721,"tz":"America/Bogota","country":"Colombia","state":"Cundinamarca"},
+    {"name":"Lima","search":"lima","lat":-12.0464,"lng":-77.0428,"tz":"America/Lima","country":"Peru","state":"Lima"},
+    {"name":"Santiago","search":"santiago chile","lat":-33.4489,"lng":-70.6693,"tz":"America/Santiago","country":"Chile","state":"Santiago"},
+    {"name":"Mexico City","search":"mexico city cdmx","lat":19.4326,"lng":-99.1332,"tz":"America/Mexico_City","country":"Mexico","state":"CDMX"},
+]
+
 
 def lookup_timezone(country, lng):
     """Get timezone from country name, fallback to longitude."""
@@ -925,12 +1105,46 @@ def lookup_timezone(country, lng):
 def geocode_city():
     """
     Convert city name to latitude, longitude, and timezone.
+    Uses built-in database first, Nominatim as fallback with caching.
     GET /api/geocode?city=Lahore
-    GET /api/geocode?city=New York
     """
     city = request.args.get("city", "").strip()
     if not city or len(city) < 2:
         return jsonify({"error": "City name required (min 2 chars)"}), 400
+
+    query_lower = city.lower()
+
+    # ── Step 1: Check in-memory cache ──
+    if query_lower in _geocode_cache:
+        return jsonify(_geocode_cache[query_lower])
+
+    # ── Step 2: Search built-in city database ──
+    matches = []
+    for c in CITIES_DB:
+        if query_lower in c["search"]:
+            matches.append({
+                "name": c["name"],
+                "full_name": f"{c['name']}, {c.get('state', '')}, {c['country']}".replace(", ,", ","),
+                "latitude": c["lat"],
+                "longitude": c["lng"],
+                "timezone": c["tz"],
+                "country": c["country"],
+                "state": c.get("state", ""),
+            })
+        if len(matches) >= 5:
+            break
+
+    if matches:
+        result = {"success": True, "query": city, "results": matches}
+        _geocode_cache[query_lower] = result
+        return jsonify(result)
+
+    # ── Step 3: Nominatim fallback (rate-limited) ──
+    import time as _time
+    global _last_nominatim_call
+    now = _time.time()
+    if now - _last_nominatim_call < 1.5:
+        _time.sleep(1.5 - (now - _last_nominatim_call))
 
     try:
         import urllib.request
@@ -944,9 +1158,11 @@ def geocode_city():
             f"&format=json&limit=5&addressdetails=1"
         )
         req = urllib.request.Request(url, headers={
-            "User-Agent": "AstrologyToolsAPI/1.0 (astrology-tools-api)"
+            "User-Agent": "AstroCalcPro/2.0 (https://astrocalcpro.com; contact@astrocalcpro.com)",
+            "Accept": "application/json",
         })
         resp = urllib.request.urlopen(req, timeout=10)
+        _last_nominatim_call = _time.time()
         results = json_lib.loads(resp.read())
 
         if not results:
@@ -980,14 +1196,16 @@ def geocode_city():
                 "state": state,
             })
 
-        return jsonify({
-            "success": True,
-            "query": city,
-            "results": cities,
-        })
+        result = {"success": True, "query": city, "results": cities}
+        _geocode_cache[query_lower] = result
+        return jsonify(result)
 
     except Exception as e:
-        return jsonify({"error": f"Geocoding failed: {str(e)}"}), 500
+        err_str = str(e)
+        # If rate-limited, return helpful message
+        if "429" in err_str:
+            return jsonify({"error": "Geocoding service is temporarily busy. Please try again in a few seconds."}), 429
+        return jsonify({"error": f"Geocoding failed: {err_str}"}), 500
 
 
 @app.route("/api/geocode/timezone", methods=["GET"])
