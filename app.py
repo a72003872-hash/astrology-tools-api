@@ -29,6 +29,17 @@ from kerykeion import (
     ChartDataFactory,
     ChartDrawer,
 )
+# RelationshipScoreFactory — import safely (may not exist in older Kerykeion)
+try:
+    from kerykeion import RelationshipScoreFactory
+    HAS_RELATIONSHIP_SCORE = True
+except ImportError:
+    try:
+        from kerykeion.relationship_score_factory import RelationshipScoreFactory
+        HAS_RELATIONSHIP_SCORE = True
+    except ImportError:
+        HAS_RELATIONSHIP_SCORE = False
+        RelationshipScoreFactory = None
 import swisseph as swe
 import math
 from interpretations import (
@@ -460,8 +471,197 @@ def get_chart_shape(planets):
 
 
 # ═══════════════════════════════════════════════════════════════
-# TOOL 1: BIRTH CHART CALCULATOR (UPGRADED)
+# RELATIONSHIP SCORE (for Synastry upgrade)
 # ═══════════════════════════════════════════════════════════════
+
+def calculate_relationship_score(s1, s2, aspects_raw):
+    """
+    Calculate relationship compatibility score (0-100).
+
+    Primary: Uses Kerykeion's RelationshipScoreFactory (Ciro Discepolo method)
+    Fallback: Calculates our own score from aspects if library version doesn't support it
+
+    Returns dict with:
+        - score: int (0-100)
+        - rating: str (e.g., "Excellent", "Strong", "Moderate", "Challenging", "Difficult")
+        - description: str (summary paragraph)
+        - breakdown: list of contributing factors (if available)
+    """
+    # ─── Attempt 1: Use Kerykeion's RelationshipScoreFactory ───
+    if HAS_RELATIONSHIP_SCORE and RelationshipScoreFactory is not None:
+        try:
+            score_factory = RelationshipScoreFactory(s1, s2)
+
+            # API varies across versions — try multiple method names
+            result = None
+            for method_name in ("get_relationship_score", "get_score"):
+                if hasattr(score_factory, method_name):
+                    result = getattr(score_factory, method_name)()
+                    break
+
+            if result is not None:
+                # Extract score value (field name varies by version)
+                score_val = None
+                for attr in ("score_value", "score"):
+                    if hasattr(result, attr):
+                        score_val = getattr(result, attr)
+                        break
+
+                # Extract description
+                desc = None
+                for attr in ("score_description", "description"):
+                    if hasattr(result, attr):
+                        desc = getattr(result, attr)
+                        break
+
+                # Extract breakdown (newer versions)
+                breakdown_items = []
+                if hasattr(result, "score_breakdown") and result.score_breakdown:
+                    for item in result.score_breakdown:
+                        breakdown_items.append({
+                            "rule": getattr(item, "rule", "") or "",
+                            "description": getattr(item, "description", "") or "",
+                            "points": getattr(item, "points", 0) or 0,
+                        })
+
+                if score_val is not None:
+                    # Ciro Discepolo method outputs 0-40+ — normalize to 0-100
+                    # Typical scale: 0-5 = weak, 5-10 = mediocre, 10-15 = important,
+                    #                15-20 = very important, 20+ = exceptional
+                    raw = float(score_val)
+                    normalized = min(100, max(0, int((raw / 30.0) * 100)))
+
+                    return {
+                        "score": normalized,
+                        "raw_score": round(raw, 1),
+                        "rating": _get_rating(normalized),
+                        "description": desc or _get_score_description(normalized),
+                        "breakdown": breakdown_items,
+                        "method": "Ciro Discepolo (Kerykeion)",
+                    }
+        except Exception:
+            pass  # Fall through to manual calculation
+
+    # ─── Attempt 2: Manual calculation from aspects ───
+    return _calculate_manual_score(s1, s2, aspects_raw)
+
+
+def _calculate_manual_score(s1, s2, aspects_raw):
+    """
+    Manual relationship score calculation based on key synastry factors.
+    Used when Kerykeion's RelationshipScoreFactory is unavailable.
+
+    Scoring logic (0-100 scale):
+    - Base score: 50
+    - Sun-Moon aspects: ±8 pts each
+    - Venus-Mars aspects: ±6 pts each
+    - Ascendant contacts: ±5 pts each
+    - Other harmonious aspects: +1 pt each
+    - Other challenging aspects: -1 pt each
+    - Element compatibility bonus: up to +10
+    """
+    score = 50  # Base score
+    breakdown = []
+
+    # Key pairs worth more weight
+    KEY_HARMONIOUS_PAIRS = [
+        ("Sun", "Moon"), ("Moon", "Sun"),
+        ("Venus", "Mars"), ("Mars", "Venus"),
+        ("Sun", "Venus"), ("Venus", "Sun"),
+        ("Moon", "Venus"), ("Venus", "Moon"),
+    ]
+
+    for a in aspects_raw:
+        p1_name = getattr(a, "p1_name", "")
+        p2_name = getattr(a, "p2_name", "")
+        asp = (getattr(a, "aspect", "") or "").lower()
+        pair = (p1_name, p2_name)
+
+        is_key_pair = pair in KEY_HARMONIOUS_PAIRS
+        is_harmonious = asp in ("trine", "sextile", "conjunction")
+        is_challenging = asp in ("square", "opposition")
+
+        if is_key_pair:
+            if is_harmonious:
+                pts = 8 if asp in ("trine", "conjunction") else 5
+                score += pts
+                breakdown.append({
+                    "rule": f"key_{asp}",
+                    "description": f"{p1_name} {asp} {p2_name} (key pair)",
+                    "points": pts,
+                })
+            elif is_challenging:
+                pts = -3  # Key pair challenging still generates chemistry
+                score += pts
+                breakdown.append({
+                    "rule": f"key_{asp}",
+                    "description": f"{p1_name} {asp} {p2_name} (key pair, growth tension)",
+                    "points": pts,
+                })
+        else:
+            # Regular aspects
+            if is_harmonious:
+                score += 1
+            elif is_challenging:
+                score -= 1
+
+    # Element compatibility bonus (Sun-Sun element match)
+    try:
+        s1_sun_elem = SIGN_ELEMENT.get(SIGN_FULL.get(s1.sun.sign, ""), "")
+        s2_sun_elem = SIGN_ELEMENT.get(SIGN_FULL.get(s2.sun.sign, ""), "")
+        if s1_sun_elem and s2_sun_elem:
+            compat = get_compat_score(s1_sun_elem, s2_sun_elem)
+            bonus = int((compat - 50) / 5)  # -10 to +10
+            score += bonus
+            if bonus != 0:
+                breakdown.append({
+                    "rule": "element_compatibility",
+                    "description": f"{s1_sun_elem} Sun × {s2_sun_elem} Sun element compatibility",
+                    "points": bonus,
+                })
+    except Exception:
+        pass
+
+    # Clamp to 0-100
+    score = min(99, max(10, score))
+
+    return {
+        "score": score,
+        "raw_score": score,
+        "rating": _get_rating(score),
+        "description": _get_score_description(score),
+        "breakdown": breakdown,
+        "method": "Synastry Aspects (AstroCalcPro method)",
+    }
+
+
+def _get_rating(score):
+    """Get text rating from numeric score."""
+    if score >= 85: return "Exceptional"
+    if score >= 70: return "Strong"
+    if score >= 55: return "Good"
+    if score >= 40: return "Moderate"
+    if score >= 25: return "Challenging"
+    return "Difficult"
+
+
+def _get_score_description(score):
+    """Get descriptive paragraph based on score range."""
+    if score >= 85:
+        return "An exceptional astrological match. The planetary connections between these two charts flow with remarkable ease across multiple dimensions — emotional, romantic, intellectual, and physical. Relationships with this level of synastry often feel destined and produce deep, lasting bonds. Watch for complacency: such natural compatibility can sometimes reduce growth motivation."
+    elif score >= 70:
+        return "A strong compatibility profile with natural chemistry and meaningful connection points. You share significant harmony in core areas of the chart, with enough contrast to keep the dynamic alive and growing. This is the classic foundation for committed, evolving partnerships that stand the test of time."
+    elif score >= 55:
+        return "A well-balanced relationship profile. The synastry shows genuine connection points alongside productive differences. Many of the most enduring partnerships fall into this range — the harmony keeps you connected, and the tension keeps you both growing. Communication and mutual respect amplify this potential."
+    elif score >= 40:
+        return "A moderately compatible profile with real strengths and meaningful challenges. This relationship will require more conscious effort than high-score matches, but that investment often produces deeper growth. The connection may feel less effortless, but the rewards come from working through differences together."
+    elif score >= 25:
+        return "A challenging synastry with significant planetary tensions alongside pockets of attraction. These relationships often generate strong chemistry and intense emotional dynamics but require exceptional emotional maturity, self-awareness, and direct communication to flourish. Not impossible — but demanding."
+    else:
+        return "A difficult astrological profile with substantial planetary contrast. This does not mean the relationship cannot work, but both partners will need to actively bridge fundamental differences in emotional style, communication, and desire. The attraction may be magnetic, and the lessons profound, but the work is real and ongoing."
+
+
+
 
 @app.route("/api/birth-chart", methods=["POST"])
 def birth_chart():
@@ -642,6 +842,9 @@ def synastry_chart():
         chart_data = ChartDataFactory.create_synastry_chart_data(s1, s2)
         svg = ChartDrawer(chart_data=chart_data).generate_svg_string()
 
+        # ── Phase 4: Relationship Score (NEW) ──
+        relationship_score = calculate_relationship_score(s1, s2, raw_aspects)
+
         return jsonify({
             "success": True, "tool": "synastry_chart",
             "person1": {
@@ -666,6 +869,7 @@ def synastry_chart():
                 "person2_in_person1": p2_in_p1_houses,
             },
             "synastry_summary": synastry_summary,
+            "relationship_score": relationship_score,
             "svg": svg,
         })
     except Exception as e:
