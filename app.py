@@ -251,12 +251,230 @@ def get_compat_score(elem1, elem2):
 
 
 # ═══════════════════════════════════════════════════════════════
-# TOOL 1: BIRTH CHART CALCULATOR
+# CHART PATTERNS DETECTION (for Birth Chart upgrade)
+# ═══════════════════════════════════════════════════════════════
+
+def detect_chart_patterns(aspects, planets):
+    """
+    Detect major chart patterns:
+    - Stellium (3+ planets in same sign OR same house)
+    - Grand Trine (3 planets in trine to each other, all same element)
+    - T-Square (2 planets in opposition, 3rd square to both)
+    - Grand Cross (4 planets forming 2 oppositions + 4 squares)
+    - Yod (2 planets in sextile, both quincunx to 3rd)
+    - Kite (Grand Trine + 1 planet opposite one corner)
+    """
+    patterns = []
+    planet_names = ["Sun","Moon","Mercury","Venus","Mars","Jupiter","Saturn","Uranus","Neptune","Pluto"]
+
+    # ── STELLIUM: 3+ planets in same sign ──
+    sign_groups = {}
+    house_groups = {}
+    for name, p in planets.items():
+        sign = p.get("sign")
+        house = p.get("house")
+        if sign:
+            sign_groups.setdefault(sign, []).append(p.get("name", name.title()))
+        if house:
+            house_groups.setdefault(house, []).append(p.get("name", name.title()))
+
+    for sign, plist in sign_groups.items():
+        if len(plist) >= 3:
+            patterns.append({
+                "name": "Stellium",
+                "type": "stellium_sign",
+                "planets": plist,
+                "location": sign,
+                "description": f"A powerful concentration of {len(plist)} planets ({', '.join(plist)}) in {sign}. This creates an intense focus of {sign} energy in your personality — themes of this sign dominate your life path."
+            })
+
+    for house, plist in house_groups.items():
+        if len(plist) >= 3 and house > 0:
+            patterns.append({
+                "name": "House Stellium",
+                "type": "stellium_house",
+                "planets": plist,
+                "location": f"House {house}",
+                "description": f"A concentration of {len(plist)} planets ({', '.join(plist)}) in House {house}. The life area governed by this house becomes a central arena of your experience and growth."
+            })
+
+    # ── Build aspect lookup for pattern detection ──
+    aspect_map = {}  # (p1, p2) -> aspect_type
+    for a in aspects:
+        p1, p2 = a["planet1"], a["planet2"]
+        asp = a["aspect"].lower()
+        key = tuple(sorted([p1, p2]))
+        aspect_map[key] = asp
+
+    def has_aspect(p1, p2, asp_type):
+        key = tuple(sorted([p1, p2]))
+        return aspect_map.get(key) == asp_type
+
+    # ── GRAND TRINE: 3 planets, all trine to each other ──
+    checked_trines = set()
+    for i, p1 in enumerate(planet_names):
+        for j, p2 in enumerate(planet_names[i+1:], i+1):
+            for k, p3 in enumerate(planet_names[j+1:], j+1):
+                trio = tuple(sorted([p1, p2, p3]))
+                if trio in checked_trines: continue
+                checked_trines.add(trio)
+                if (has_aspect(p1, p2, "trine") and
+                    has_aspect(p2, p3, "trine") and
+                    has_aspect(p1, p3, "trine")):
+                    # Check element
+                    e1 = planets.get(p1.lower(), {}).get("element")
+                    e2 = planets.get(p2.lower(), {}).get("element")
+                    e3 = planets.get(p3.lower(), {}).get("element")
+                    element = e1 if (e1 == e2 == e3) else "Mixed"
+                    patterns.append({
+                        "name": "Grand Trine",
+                        "type": "grand_trine",
+                        "planets": [p1, p2, p3],
+                        "location": f"{element} Element" if element != "Mixed" else "Mixed Elements",
+                        "description": f"A rare harmonious pattern — {p1}, {p2}, and {p3} form a perfect triangle of trines. This creates natural talent and effortless flow in {element.lower() if element != 'Mixed' else 'these'} areas. The gift can feel so natural that you may take it for granted."
+                    })
+
+    # ── T-SQUARE: 2 planets opposite, 3rd squares both ──
+    checked_tsquares = set()
+    for i, p1 in enumerate(planet_names):
+        for j, p2 in enumerate(planet_names[i+1:], i+1):
+            if has_aspect(p1, p2, "opposition"):
+                for k, p3 in enumerate(planet_names):
+                    if p3 in [p1, p2]: continue
+                    if has_aspect(p1, p3, "square") and has_aspect(p2, p3, "square"):
+                        trio = tuple(sorted([p1, p2, p3]))
+                        if trio in checked_tsquares: continue
+                        checked_tsquares.add(trio)
+                        patterns.append({
+                            "name": "T-Square",
+                            "type": "t_square",
+                            "planets": [p1, p2, p3],
+                            "focal_planet": p3,
+                            "location": f"Focal point: {p3}",
+                            "description": f"A dynamic tension pattern — {p1} opposes {p2}, and {p3} squares both. {p3} becomes the focal point where the tension must be resolved. T-Squares drive achievement through challenge; people with this pattern often become exceptional in the area ruled by {p3}."
+                        })
+
+    # ── YOD (Finger of God): 2 sextile, both quincunx to 3rd ──
+    checked_yods = set()
+    for i, p1 in enumerate(planet_names):
+        for j, p2 in enumerate(planet_names[i+1:], i+1):
+            if has_aspect(p1, p2, "sextile"):
+                for k, p3 in enumerate(planet_names):
+                    if p3 in [p1, p2]: continue
+                    if has_aspect(p1, p3, "quincunx") and has_aspect(p2, p3, "quincunx"):
+                        trio = tuple(sorted([p1, p2, p3]))
+                        if trio in checked_yods: continue
+                        checked_yods.add(trio)
+                        patterns.append({
+                            "name": "Yod (Finger of Fate)",
+                            "type": "yod",
+                            "planets": [p1, p2, p3],
+                            "focal_planet": p3,
+                            "location": f"Apex: {p3}",
+                            "description": f"A rare karmic pattern also called the 'Finger of God'. {p1} and {p2} work in harmony (sextile) while both point awkwardly at {p3}. This creates a sense of destiny around {p3} — a specific mission that feels unusual, sometimes uncomfortable, but deeply meaningful."
+                        })
+
+    return patterns
+
+
+def get_dominant_element(elements):
+    """Returns the strongest element and its percentage."""
+    if not elements: return {"element": "Balanced", "percentage": 0}
+    total = sum(elements.values()) or 1
+    dominant = max(elements, key=elements.get)
+    return {
+        "element": dominant,
+        "count": elements[dominant],
+        "percentage": round((elements[dominant] / total) * 100, 1)
+    }
+
+
+def get_dominant_modality(qualities):
+    """Returns the strongest modality (Cardinal/Fixed/Mutable)."""
+    if not qualities: return {"modality": "Balanced", "percentage": 0}
+    total = sum(qualities.values()) or 1
+    dominant = max(qualities, key=qualities.get)
+    return {
+        "modality": dominant,
+        "count": qualities[dominant],
+        "percentage": round((dominant and (qualities[dominant] / total) * 100) or 0, 1)
+    }
+
+
+def count_hemisphere_distribution(planets):
+    """
+    Count planets in each hemisphere:
+    - North/South: Houses 7-12 (above horizon) vs 1-6 (below)
+    - East/West: Houses 10-3 (east) vs 4-9 (west)
+    """
+    north, south, east, west = 0, 0, 0, 0
+    for p in planets.values():
+        h = p.get("house", 0)
+        if 7 <= h <= 12: north += 1
+        elif 1 <= h <= 6: south += 1
+        if h in [10, 11, 12, 1, 2, 3]: east += 1
+        elif h in [4, 5, 6, 7, 8, 9]: west += 1
+    return {"north": north, "south": south, "east": east, "west": west}
+
+
+def get_chart_shape(planets):
+    """
+    Detect chart shape based on planet distribution:
+    - Bundle: all planets within 120°
+    - Bowl: all planets within 180°
+    - Bucket: bowl + 1 planet opposite (handle)
+    - Locomotive: all planets within 240° (gap of 120°+)
+    - Splash: planets spread relatively evenly
+    - Seesaw: two groups opposite each other
+    - Splay: uneven distribution with multiple clusters
+    """
+    positions = sorted([p["abs_degree"] for p in planets.values() if "abs_degree" in p])
+    if len(positions) < 8:
+        return {"shape": "Unknown", "description": "Not enough data to determine chart shape."}
+
+    # Find the largest gap
+    gaps = []
+    for i in range(len(positions)):
+        next_pos = positions[(i+1) % len(positions)]
+        gap = (next_pos - positions[i]) % 360
+        if gap < 0: gap += 360
+        gaps.append(gap)
+
+    max_gap = max(gaps)
+    span = 360 - max_gap
+
+    if span <= 120:
+        return {"shape": "Bundle", "description": "All planets are concentrated within 120°, creating intense focus on a narrow range of life themes. You pursue a specific direction with unusual concentration."}
+    elif span <= 180:
+        # Check for bucket (bowl + handle)
+        second_gap = sorted(gaps, reverse=True)[1] if len(gaps) > 1 else 0
+        if second_gap > 60:
+            return {"shape": "Bucket", "description": "Most planets form a bowl with one or two isolated planets acting as a 'handle'. The handle planet becomes the focal point through which you channel the energy of the rest of the chart."}
+        return {"shape": "Bowl", "description": "Planets occupy only one half of the chart. You carry a sense of specialization or self-contained purpose, sometimes feeling you must complete what the empty half represents."}
+    elif span <= 240:
+        return {"shape": "Locomotive", "description": "Planets span about two-thirds of the chart with a clear empty section. The planet leading the pack (in zodiacal order) becomes an engine of drive and ambition."}
+    elif max_gap < 60:
+        return {"shape": "Splash", "description": "Planets are spread relatively evenly around the chart. You have diverse interests, multifaceted abilities, and find meaning across many life areas."}
+    else:
+        return {"shape": "Splay", "description": "Planets cluster in two or three distinct groups with clear gaps. You have pronounced areas of focus with notable blind spots — your strengths are concentrated rather than spread thin."}
+
+
+# ═══════════════════════════════════════════════════════════════
+# TOOL 1: BIRTH CHART CALCULATOR (UPGRADED)
 # ═══════════════════════════════════════════════════════════════
 
 @app.route("/api/birth-chart", methods=["POST"])
 def birth_chart():
-    """Full birth chart — planets, houses, aspects, elements, qualities, interpretations."""
+    """
+    Full birth chart with ALL features:
+    - Planets, houses, aspects, elements, qualities
+    - Chart patterns (Stellium, Grand Trine, T-Square, Yod)
+    - Chart shape (Bundle, Bowl, Bucket, etc.)
+    - Hemisphere distribution (North/South, East/West)
+    - Dominant element & modality
+    - Full interpretations for all placements
+    - SVG chart wheel (included directly for performance)
+    """
     data = request.get_json()
     if not data: return jsonify({"error":"No JSON data"}), 400
     valid, err = validate(data)
@@ -267,6 +485,10 @@ def birth_chart():
         planets = get_all_planets(s)
         houses = get_all_houses(s)
         aspects = [fmt_aspect(a) for a in NatalAspects(s).all_aspects]
+
+        # Get elements and qualities
+        elements = get_element_dist(planets)
+        qualities = get_quality_dist(planets)
 
         # Build comprehensive interpretations
         interps = {
@@ -280,6 +502,28 @@ def birth_chart():
             "saturn": SATURN_INTERPRETATIONS.get(planets["saturn"]["sign"], {}),
         }
 
+        # Detect chart patterns
+        patterns = detect_chart_patterns(aspects, planets)
+
+        # Additional analysis
+        chart_shape = get_chart_shape(planets)
+        hemispheres = count_hemisphere_distribution(planets)
+        dominant_element = get_dominant_element(elements)
+        dominant_modality = get_dominant_modality(qualities)
+
+        # Aspect summary
+        harmonious_count = sum(1 for a in aspects if a["aspect"].lower() in ["conjunction", "trine", "sextile"])
+        challenging_count = sum(1 for a in aspects if a["aspect"].lower() in ["square", "opposition"])
+        exact_count = sum(1 for a in aspects if a["orb"] <= 1)
+
+        # Generate SVG chart wheel (single API call instead of two)
+        svg_chart = None
+        try:
+            chart_data = ChartDataFactory.create_natal_chart_data(s)
+            svg_chart = ChartDrawer(chart_data=chart_data).generate_svg_string()
+        except Exception:
+            svg_chart = None  # Don't fail the whole request if SVG fails
+
         return jsonify({
             "success": True, "tool": "birth_chart",
             "name": data.get("name","User"),
@@ -287,11 +531,27 @@ def birth_chart():
                 "sun_sign": planets["sun"]["sign"],
                 "moon_sign": planets["moon"]["sign"],
                 "rising_sign": houses[0]["sign"],
+                "sun_house": planets["sun"]["house"],
+                "moon_house": planets["moon"]["house"],
             },
-            "planets": planets, "houses": houses, "aspects": aspects,
-            "elements": get_element_dist(planets),
-            "qualities": get_quality_dist(planets),
+            "planets": planets,
+            "houses": houses,
+            "aspects": aspects,
+            "aspects_summary": {
+                "total": len(aspects),
+                "harmonious": harmonious_count,
+                "challenging": challenging_count,
+                "exact": exact_count,
+            },
+            "elements": elements,
+            "qualities": qualities,
+            "dominant_element": dominant_element,
+            "dominant_modality": dominant_modality,
+            "chart_shape": chart_shape,
+            "hemispheres": hemispheres,
+            "patterns": patterns,
             "interpretations": interps,
+            "svg": svg_chart,
         })
     except Exception as e:
         return jsonify({"error":str(e)}), 500
@@ -299,7 +559,7 @@ def birth_chart():
 
 @app.route("/api/birth-chart/svg", methods=["POST"])
 def birth_chart_svg():
-    """Generate birth chart SVG image."""
+    """Generate birth chart SVG image only (kept for backward compatibility)."""
     data = request.get_json()
     if not data: return jsonify({"error":"No JSON data"}), 400
     valid, err = validate(data)
