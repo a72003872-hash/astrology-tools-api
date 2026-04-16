@@ -517,16 +517,30 @@ def birth_chart():
         exact_count = sum(1 for a in aspects if a["orb"] <= 1)
 
         # Generate SVG chart wheel (single API call instead of two)
+        # Using wheel-only mode (no birth data text inside wheel)
         svg_chart = None
         try:
             chart_data = ChartDataFactory.create_natal_chart_data(s)
-            svg_chart = ChartDrawer(chart_data=chart_data).generate_svg_string()
+            drawer = ChartDrawer(chart_data=chart_data)
+            # Try wheel-only first (cleaner look), fallback to full chart
+            if hasattr(drawer, 'generate_wheel_only_svg_string'):
+                svg_chart = drawer.generate_wheel_only_svg_string()
+            else:
+                svg_chart = drawer.generate_svg_string()
         except Exception:
             svg_chart = None  # Don't fail the whole request if SVG fails
 
         return jsonify({
             "success": True, "tool": "birth_chart",
             "name": data.get("name","User"),
+            "birth_data": {
+                "date": f"{int(data['day']):02d}/{int(data['month']):02d}/{int(data['year'])}",
+                "time": f"{int(data['hour']):02d}:{int(data['minute']):02d}",
+                "latitude": round(float(data['latitude']), 4),
+                "longitude": round(float(data['longitude']), 4),
+                "timezone": data.get('timezone', 'UTC'),
+                "city": data.get('city', ''),
+            },
             "summary": {
                 "sun_sign": planets["sun"]["sign"],
                 "moon_sign": planets["moon"]["sign"],
