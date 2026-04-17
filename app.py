@@ -932,26 +932,52 @@ def love_compatibility():
 
         # Score interpretation text
         if overall >= 80:
+            rating = "Exceptional"
             score_meaning = "Exceptional compatibility. Your planetary energies flow together with remarkable ease across emotional, romantic, and physical dimensions. This level of natural alignment is rare and suggests a deeply intuitive connection."
         elif overall >= 65:
+            rating = "Strong"
             score_meaning = "Strong compatibility with natural chemistry. You share meaningful harmony in several key areas, with enough difference to keep the relationship dynamic. This is a solid foundation for long-term partnership."
         elif overall >= 50:
+            rating = "Good"
             score_meaning = "Moderate compatibility with a healthy balance of harmony and challenge. Many successful long-term relationships fall in this range because the friction keeps both partners growing while the harmony keeps them connected."
         elif overall >= 35:
+            rating = "Challenging"
             score_meaning = "Below average compatibility that requires conscious effort. The planetary tensions between your charts create intensity and passion but also frequent misunderstandings. Communication and patience are essential."
         else:
+            rating = "Difficult"
             score_meaning = "Significant planetary contrast between your charts. This does not mean the relationship cannot work, but it does mean both partners will need to actively bridge differences in emotional style, communication, and desire. The attraction may be strong despite the challenges."
 
         return jsonify({
             "success": True, "tool": "love_compatibility",
-            "person1": {"name":data["person1"].get("name","Person 1"),
-                        "sun":p1["sun"]["sign"],"moon":p1["moon"]["sign"],
-                        "venus":p1["venus"]["sign"],"mars":p1["mars"]["sign"]},
-            "person2": {"name":data["person2"].get("name","Person 2"),
-                        "sun":p2["sun"]["sign"],"moon":p2["moon"]["sign"],
-                        "venus":p2["venus"]["sign"],"mars":p2["mars"]["sign"]},
+            "person1": {
+                "name": data["person1"].get("name","Person 1"),
+                "sun": p1["sun"]["sign"], "moon": p1["moon"]["sign"],
+                "venus": p1["venus"]["sign"], "mars": p1["mars"]["sign"],
+                "sun_element": p1["sun"].get("element",""),
+                "moon_element": p1["moon"].get("element",""),
+                "venus_element": p1["venus"].get("element",""),
+                "mars_element": p1["mars"].get("element",""),
+                "sun_degree": p1["sun"].get("degree",0),
+                "moon_degree": p1["moon"].get("degree",0),
+                "venus_degree": p1["venus"].get("degree",0),
+                "mars_degree": p1["mars"].get("degree",0),
+            },
+            "person2": {
+                "name": data["person2"].get("name","Person 2"),
+                "sun": p2["sun"]["sign"], "moon": p2["moon"]["sign"],
+                "venus": p2["venus"]["sign"], "mars": p2["mars"]["sign"],
+                "sun_element": p2["sun"].get("element",""),
+                "moon_element": p2["moon"].get("element",""),
+                "venus_element": p2["venus"].get("element",""),
+                "mars_element": p2["mars"].get("element",""),
+                "sun_degree": p2["sun"].get("degree",0),
+                "moon_degree": p2["moon"].get("degree",0),
+                "venus_degree": p2["venus"].get("degree",0),
+                "mars_degree": p2["mars"].get("degree",0),
+            },
             "scores": {
                 "overall": overall,
+                "rating": rating,
                 "sun_compatibility": sun_score,
                 "moon_compatibility": moon_score,
                 "venus_compatibility": venus_score,
