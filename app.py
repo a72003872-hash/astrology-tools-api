@@ -98,10 +98,10 @@ HOUSE_NUM = {
 
 # ─── Compatibility scores (simplified element-based) ─────────
 ELEMENT_COMPAT = {
-    ("Fire","Fire"):90,("Fire","Air"):85,("Fire","Earth"):50,("Fire","Water"):40,
-    ("Air","Air"):85,("Air","Earth"):45,("Air","Water"):55,
-    ("Earth","Earth"):88,("Earth","Water"):82,
-    ("Water","Water"):90,
+    ("Fire","Fire"):80,("Fire","Air"):78,("Fire","Earth"):45,("Fire","Water"):38,
+    ("Air","Air"):78,("Air","Earth"):42,("Air","Water"):50,
+    ("Earth","Earth"):78,("Earth","Water"):75,
+    ("Water","Water"):80,
 }
 
 
@@ -911,41 +911,64 @@ def love_compatibility():
         # Mars compatibility (passion)
         mars_score = get_compat_score(p1["mars"]["element"], p2["mars"]["element"])
 
-        # Aspect-based scoring
+        # Aspect-based scoring — BALANCED (v2.7.0)
+        # Only count tight orbs (< 6°) for personal planets.
+        # Cap bonuses and penalties to prevent score inflation.
         aspects = SynastryAspects(s1, s2).all_aspects
         aspect_bonus = 0
         harmonious = 0
         challenging = 0
+        personal_planets = ["Sun", "Moon", "Mercury", "Venus", "Mars"]
+
         for a in aspects:
-            if a.aspect in ["conjunction","trine","sextile"]:
+            # Both planets must be personal for a meaningful aspect
+            is_personal = a.p1_name in personal_planets and a.p2_name in personal_planets
+            # Tighter orb = stronger aspect
+            orb = getattr(a, "orbit", None) or getattr(a, "orb", 10)
+            try:
+                orb = abs(float(orb))
+            except (TypeError, ValueError):
+                orb = 10
+
+            if a.aspect in ["conjunction", "trine", "sextile"]:
                 harmonious += 1
-                if a.p1_name in ["Sun","Moon","Venus"] or a.p2_name in ["Sun","Moon","Venus"]:
-                    aspect_bonus += 3
-            elif a.aspect in ["square","opposition"]:
+                if is_personal:
+                    if orb <= 2:
+                        aspect_bonus += 2    # Very tight harmonious — strong
+                    elif orb <= 4:
+                        aspect_bonus += 1    # Moderate
+                    # > 4° orb: no bonus (too loose)
+            elif a.aspect in ["square", "opposition"]:
                 challenging += 1
-                if a.p1_name in ["Sun","Moon","Venus"] or a.p2_name in ["Sun","Moon","Venus"]:
-                    aspect_bonus -= 1
+                if is_personal:
+                    if orb <= 2:
+                        aspect_bonus -= 2    # Very tight challenging — real friction
+                    elif orb <= 4:
+                        aspect_bonus -= 1
 
-        # Overall score
+        # Cap the bonus so no couple gets runaway inflation
+        aspect_bonus = max(-10, min(12, aspect_bonus))
+
+        # Overall score (weighted average of 4 elements + capped aspect adjustment)
         base = (sun_score * 0.30 + moon_score * 0.30 + venus_score * 0.25 + mars_score * 0.15)
-        overall = min(99, max(10, int(base + aspect_bonus)))
+        overall = min(95, max(20, int(round(base + aspect_bonus))))
 
-        # Score interpretation text
-        if overall >= 80:
+        # Score interpretation text — calibrated thresholds (v2.7.0)
+        if overall >= 85:
             rating = "Exceptional"
             score_meaning = "Exceptional compatibility. Your planetary energies flow together with remarkable ease across emotional, romantic, and physical dimensions. This level of natural alignment is rare and suggests a deeply intuitive connection."
-        elif overall >= 65:
+        elif overall >= 70:
             rating = "Strong"
             score_meaning = "Strong compatibility with natural chemistry. You share meaningful harmony in several key areas, with enough difference to keep the relationship dynamic. This is a solid foundation for long-term partnership."
-        elif overall >= 50:
+        elif overall >= 55:
             rating = "Good"
-            score_meaning = "Moderate compatibility with a healthy balance of harmony and challenge. Many successful long-term relationships fall in this range because the friction keeps both partners growing while the harmony keeps them connected."
-        elif overall >= 35:
-            rating = "Challenging"
-            score_meaning = "Below average compatibility that requires conscious effort. The planetary tensions between your charts create intensity and passion but also frequent misunderstandings. Communication and patience are essential."
+            score_meaning = "Good compatibility with a healthy balance of harmony and challenge. Many successful long-term relationships fall in this range because the friction keeps both partners growing while the harmony keeps them connected."
+        elif overall >= 40:
+            rating = "Moderate"
+            score_meaning = "Moderate compatibility that works best with conscious effort. The planetary tensions between your charts create intensity and passion but also frequent misunderstandings. Communication, patience, and mutual respect are essential."
         else:
-            rating = "Difficult"
-            score_meaning = "Significant planetary contrast between your charts. This does not mean the relationship cannot work, but it does mean both partners will need to actively bridge differences in emotional style, communication, and desire. The attraction may be strong despite the challenges."
+            rating = "Challenging"
+            score_meaning = "Significant planetary contrast between your charts. This does not mean the relationship cannot work, but both partners will need to actively bridge differences in emotional style, communication, and desire. The attraction may be strong despite the challenges."
 
         return jsonify({
             "success": True, "tool": "love_compatibility",
